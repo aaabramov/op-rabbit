@@ -14,7 +14,7 @@ val appProperties = {
 val assertNoApplicationConf = taskKey[Unit]("Makes sure application.conf isn't packaged")
 
 val commonSettings = Seq(
-  organization := "com.spingo",
+  organization := "com.github.aaabramov",
   version := appProperties.getProperty("version"),
   scalaVersion := "2.12.6",
   crossScalaVersions := Seq("2.12.6", "2.11.12"),
@@ -39,17 +39,17 @@ val commonSettings = Seq(
       Some("releases"  at nexus + "service/local/staging/deploy/maven2")
   },
   licenses := Seq("Apache 2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
-  homepage := Some(url("https://github.com/SpinGo/op-rabbit")),
+  homepage := Some(url("https://github.com/aaabramov/op-rabbit")),
   pomExtra := {
     <scm>
-      <url>https://github.com/SpinGo/op-rabbit</url>
-      <connection>scm:git:git@github.com:SpinGo/op-rabbit.git</connection>
+      <url>https://github.com/aaabramov/op-rabbit</url>
+      <connection>scm:git:git@github.com:aaabramov/op-rabbit.git</connection>
     </scm>
     <developers>
       <developer>
-        <id>timcharper</id>
-        <name>Tim Harper</name>
-        <url>http://spingo.com</url>
+        <id>aaabramov</id>
+        <name>Andrii Abramov</name>
+        <url>http://github.com/aaabramov</url>
       </developer>
     </developers>
   },

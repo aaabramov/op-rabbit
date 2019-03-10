@@ -140,7 +140,7 @@ class ConsumerSpec extends FunSpec with ScopedFixtures with Matchers with Rabbit
       new RedeliveryFixtures with RabbitFixtures {
         val retryCount = 1
 
-        implicit val recoveryStrategy = RecoveryStrategy.limitedRedeliver(redeliverDelay = 100.millis, retryCount = 1)
+        implicit val recoveryStrategy = RecoveryStrategy.limitedRedeliver(redeliverDelay = _ => 100.millis, maxAttempts = 1)
 
         val subscriptionDef = countAndRejectSubscription()
 
@@ -164,8 +164,8 @@ class ConsumerSpec extends FunSpec with ScopedFixtures with Matchers with Rabbit
 
           try {
             implicit val recoveryStrategy = RecoveryStrategy.limitedRedeliver(
-              redeliverDelay = 100.millis,
-              retryCount     = retryCount,
+              redeliverDelay = _ => 100.millis,
+              maxAttempts     = retryCount,
               onAbandon      = RecoveryStrategy.abandonedQueue(3.seconds))
             val subscription = countAndRejectSubscription()(recoveryStrategy).run(rabbitControl)
             await(subscription.initialized)
@@ -208,8 +208,8 @@ class ConsumerSpec extends FunSpec with ScopedFixtures with Matchers with Rabbit
           try {
             (List(3.seconds, 4.seconds)) foreach { time =>
               implicit val recoveryStrategy = RecoveryStrategy.limitedRedeliver(
-                redeliverDelay = 100.millis,
-                retryCount     = 1,
+                redeliverDelay = _ => 100.millis,
+                maxAttempts     = 1,
                 onAbandon      = RecoveryStrategy.abandonedQueue(time))
               val subscription = countAndRejectSubscription()
 

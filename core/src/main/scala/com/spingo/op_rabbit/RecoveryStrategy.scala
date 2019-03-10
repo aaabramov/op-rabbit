@@ -136,49 +136,53 @@ object RecoveryStrategy {
    * In other words, '''DO NOT TRY AND CONSOLIDATE REDELIVERY QUEUES'''.
    *
    * @param redeliveryDelay The period after which the message should be re-inserted into the original queue.
-   * @param retryCount The number of times to retry. A value of 3 will result in 4 attempts, including the initial.
+   * @param maxAttempts The number of times to retry. A value of 3 will result in 4 attempts, including the initial.
    * @param onAbandon The strategy to be used once the retryCount is exhausted. Defaults to `nack(false)`.
    * @param retryQueue A function which, given some input queue name, returns the queue name to be used for retries. Must be a pure function. Must return a unique value for each input.
    */
   def limitedRedeliver(
-    redeliverDelay: FiniteDuration = 10.seconds,
-    retryCount: Int = 3,
-    onAbandon: RecoveryStrategy = nack(false),
-    retryQueueName : (String) => String = { q => s"op-rabbit.retry.$q" },
-    retryQueueProperties: List[properties.Header] = Nil,
-    exchange: Exchange[Exchange.Direct.type] = Exchange.default
-  ) = new RecoveryStrategy {
+                        redeliverDelay: Int => FiniteDuration = _ => 10.seconds,
+                        maxAttempts: Int = 3,
+                        onAbandon: RecoveryStrategy = nack(false),
+                        retryQueueName : (String, Int, FiniteDuration) => String = { (q, _, _) => s"op-rabbit.retry.$q" },
+                        retryQueueProperties: List[properties.Header] = Nil,
+                        exchange: Exchange[Exchange.Direct.type] = Exchange.default
+  ): RecoveryStrategy = new RecoveryStrategy {
     import Queue.ModeledArgs._
 
-    def genRetryBinding(queueName: String) =
+    def genRetryBinding(queueName: String, attemptNo: Int, delay: FiniteDuration): Binding =
       Binding.direct(
         Queue.passive(
           Queue(
-            retryQueueName(queueName),
+            retryQueueName(queueName, attemptNo, delay),
             durable = true,
+            exclusive = false,
+            autoDelete = false,
             arguments = List[properties.Header](
-              `x-expires`(redeliverDelay * 3),
-              `x-message-ttl`(redeliverDelay),
+              `x-expires`(delay * 3),
+              `x-message-ttl`(delay),
               `x-dead-letter-exchange`(exchange.exchangeName),
               `x-dead-letter-routing-key`(queueName)) ++ retryQueueProperties)),
-        exchange)
+        exchange
+      )
 
-    private val getRetryCount = (property(`x-retry`) | Directives.provide(0))
+    private val getRetryCount = property(`x-retry`) | Directives.provide(1)
+
     def apply(queueName: String, channel: Channel, ex: Throwable): Handler = {
       getRetryCount {
-        case (thisRetryCount) if (thisRetryCount < retryCount) =>
+        case attemptNo if attemptNo < maxAttempts =>
           (extract(identity) & originalRoutingKey & originalExchange) {
             (delivery, rk, x) =>
 
             /* It is important that we create a new instance of the passive retry queue each time it is used; otherwise,
              * we risk that the queue could disappear due to `x-expires`, and messages dead-letter. */
-            val binding = genRetryBinding(queueName)
+            val binding = genRetryBinding(queueName, attemptNo, redeliverDelay(attemptNo))
             binding.declare(channel)
 
             channel.basicPublish(exchange.exchangeName,
               binding.queueName,
               delivery.properties ++ Seq(
-                `x-retry`(thisRetryCount + 1),
+                `x-retry`(attemptNo + 1),
                 `x-original-routing-key`(rk),
                 `x-original-exchange`(x),
                 `x-exception`(formatException(ex))),
