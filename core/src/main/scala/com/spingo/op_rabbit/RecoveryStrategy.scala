@@ -34,6 +34,8 @@ object RecoveryStrategy {
   /** The message header used to track retry attempts. */
   val `x-retry` = properties.TypedHeader[Int]("x-retry")
 
+  val `x-client-id` = properties.TypedHeader[String]("x-client-id")
+
   /** The original routing key before redeliver attempts */
   val `x-original-routing-key` = properties.TypedHeader[String]("x-original-routing-key")
 
@@ -142,7 +144,7 @@ object RecoveryStrategy {
    */
   def limitedRedeliver(
                         redeliverDelay: Int => FiniteDuration = _ => 10.seconds,
-                        maxAttempts: Int = 3,
+                        maxAttempts: String => Int = _ => 3,
                         onAbandon: RecoveryStrategy = nack(false),
                         retryQueueName : (String, Int, FiniteDuration) => String = { (q, _, _) => s"op-rabbit.retry.$q" },
                         retryQueueProperties: List[properties.Header] = Nil,
@@ -167,10 +169,11 @@ object RecoveryStrategy {
       )
 
     private val getRetryCount = property(`x-retry`) | Directives.provide(1)
+    private val getClientId = property(`x-client-id`) | Directives.provide("DEFAULT")
 
     def apply(queueName: String, channel: Channel, ex: Throwable): Handler = {
-      getRetryCount {
-        case attemptNo if attemptNo < maxAttempts =>
+      (getRetryCount & getClientId) {
+        case (attemptNo, clientId) if attemptNo < maxAttempts(clientId) =>
           (extract(identity) & originalRoutingKey & originalExchange) {
             (delivery, rk, x) =>
 
