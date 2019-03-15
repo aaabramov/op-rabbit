@@ -34,6 +34,8 @@ object RecoveryStrategy {
   /** The message header used to track retry attempts. */
   val `x-retry` = properties.TypedHeader[Int]("x-retry")
 
+  val `x-attempt-no` = properties.TypedHeader[Int]("x-attempt-no")
+
   val `x-client-id` = properties.TypedHeader[String]("x-client-id")
 
   /** The original routing key before redeliver attempts */
@@ -144,7 +146,7 @@ object RecoveryStrategy {
    */
   def limitedRedeliver(
                         redeliverDelay: Int => FiniteDuration = _ => 10.seconds,
-                        maxAttempts: String => Int = _ => 3,
+                        maxAttempts: Int = 3,
                         onAbandon: RecoveryStrategy = nack(false),
                         retryQueueName : (String, Int, FiniteDuration) => String = { (q, _, _) => s"op-rabbit.retry.$q" },
                         retryQueueProperties: List[properties.Header] = Nil,
@@ -168,12 +170,13 @@ object RecoveryStrategy {
         exchange
       )
 
-    private val getRetryCount = property(`x-retry`) | Directives.provide(1)
-    private val getClientId = property(`x-client-id`) | Directives.provide("DEFAULT")
+    private val withAttemptNo = property(`x-attempt-no`) | Directives.provide(1)
 
     def apply(queueName: String, channel: Channel, ex: Throwable): Handler = {
-      (getRetryCount & getClientId) {
-        case (attemptNo, clientId) if attemptNo < maxAttempts(clientId) =>
+      withAttemptNo {
+
+        case attemptNo if attemptNo < maxAttempts =>
+
           (extract(identity) & originalRoutingKey & originalExchange) {
             (delivery, rk, x) =>
 
@@ -185,7 +188,7 @@ object RecoveryStrategy {
             channel.basicPublish(exchange.exchangeName,
               binding.queueName,
               delivery.properties ++ Seq(
-                `x-retry`(attemptNo + 1),
+                `x-attempt-no`(attemptNo + 1),
                 `x-original-routing-key`(rk),
                 `x-original-exchange`(x),
                 `x-exception`(formatException(ex))),
